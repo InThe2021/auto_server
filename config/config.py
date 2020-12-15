@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 __author__ = 'yzx'
+#20201215
 from bin.get_hostip import hostip
 mysqls={
     "dbip": "172.16.100.157",
