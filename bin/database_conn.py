@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 __author__ = 'yzx'
+#20201215
 import pymysql
 from config.config import mysqls
 from bin.log_module import logs

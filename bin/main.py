@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 __author__ = 'yzx'
+#20201215
 from bin.sql_operation import app_info,update_scan_err_time,update_status,cluster_status,online_status
 from bin.check_http_code import http_status
 from bin.log_module import logs

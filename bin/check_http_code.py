@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 __author__ = 'yzx'
+#20201215
 import requests
 from bin.log_module import logs
 def http_status(appurl,app_name):  # 定义获取http请求的返回状态码函数

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 __author__ = 'yzx'
+#20201215
 import logging
 def logs(log_text):#日志输出
     logger = logging.getLogger('yzx')
