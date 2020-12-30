@@ -141,7 +141,7 @@ def restart(restart_cmd,app_name,home_path,appurl,host_ip,msg_ip_port): #重启�
     jstack_repl = str(jstack.stderr.read(), encoding='utf8')
 
     jmap = subprocess.Popen(
-        "cd %s && sh jmap.sh $(ps -ef| grep %s/tomcat | grep -v grep  | awk '{print $2}');" % (home_path, app_name),
+        "cd %s && sh py_jmap.sh $(ps -ef| grep %s/tomcat | grep -v grep  | awk '{print $2}');" % (home_path, app_name),
         shell=True, stdout=subprocess.PIPE)#调用jmap.sh生成jmap信息
     jmap_repl = str(jmap.stdout.read(), encoding='utf8')
 

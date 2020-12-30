@@ -143,7 +143,7 @@ def restart(restart_cmd,app_name,home_path,appurl,host_ip,msg_ip_port): #重启�
     jstack = subprocess.Popen(u'jstack -F -l $(ps -ef| grep %s/tomcat | grep -v grep  | awk "{print $2}") > %s/jstack_$(date +"%s").log;' % (app_name, home_path, u'%Y%m%d%H%M%S'),shell=True, stderr=subprocess.PIPE) #生产jstack到应用程序目录
     jstack_repl = unicode(jstack.stderr.read(), encoding=u'utf8')
 
-    jmap = subprocess.Popen(u"cd %s && sh jmap.sh $(ps -ef| grep %s/tomcat | grep -v grep  | awk '{print $2}');" % (home_path, app_name),shell=True, stdout=subprocess.PIPE)#调用jmap.sh生成jmap信息
+    jmap = subprocess.Popen(u"cd %s && sh py_jmap.sh $(ps -ef| grep %s/tomcat | grep -v grep  | awk '{print $2}');" % (home_path, app_name),shell=True, stdout=subprocess.PIPE)#调用jmap.sh生成jmap信息
     jmap_repl = unicode(jmap.stdout.read(), encoding=u'utf8')
 
     start_date = time.strftime(u'%d-%b-%Y %H:%M', time.localtime(time.time()))  # 定义开始时间 日-月(英文简写)-年 时：分：秒
