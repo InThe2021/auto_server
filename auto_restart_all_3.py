@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 # yzx20200819
 import requests
+import psutil
 #import dns.resolver
 #import os
 #import http.client
@@ -12,7 +13,7 @@ import logging
 import subprocess
 import pymysql
 import socket
-
+__author__ = 'yzx'
 
 
 def hostip():#获取本地IP
@@ -28,7 +29,7 @@ def logs(log_text):#日志输出
     logger.setLevel(logging.INFO)
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s', datefmt='%Y-%m-%d %R:%S')
     if not logger.handlers:  # handlers属性，控制重复输出.因为logger的name被固定，所以当你第一次为logger对象添加FileHandler对象之后，如果没有移除上一次的FileHandler对象，第二次logger对象就会再次获得相同的FileHandler对象，即拥有两个FileHandler对象，最终造成打印两次，同样，如果此时没有立即移除上一次的FileHandler对象，第三次logger对象就会再次获得相同的FileHandler对象，即拥有三个FileHandler象，最终打印3次........
-        file_out = logging.FileHandler('/home/www/logsfile/auto_restrt.log')  # 用于输出至文件
+        file_out = logging.FileHandler('system_auto_restart.log')  # 用于输出至文件
         # logger.setLevel(logging.INFO)
         file_out.setFormatter(formatter)
         logger.addHandler(file_out)  # logger绑定处理对象
@@ -64,7 +65,7 @@ def app_info():#获取app的hostname,ip,port,application,cmds信息
     connects = mysql_conn(dbip, username, pws, dbname)
     with connects.cursor() as cursor:
         cursor = connects.cursor()
-        cursor.execute('select hostname,ip,port,application,cmds from app_info where ip="%s" and open_status=1;' % host_ip)  # 查询数据库项目列表
+        cursor.execute('select hostname,ip,port,application,cmds,is_restart_now from app_info where ip="%s" and open_status=1;' % host_ip)  # 查询数据库项目列表
         connects.commit()
         info = cursor.fetchall()
         if len(info) < 1:
@@ -109,6 +110,14 @@ def update_status(status,host_ip,app_name): #更新状态
         connects.commit()
         connects.close()
 
+def logs_to_db(host_ip,app_name): #
+    dates = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+    connects = mysql_conn(dbip, username, pws, dbname)
+    with connects.cursor() as cursor:
+        cursor.execute("INSERT INTO logs_info (username,operation,date) VALUES('system','%s','%s');" % ('[Auto-Restart]:'+app_name+'_'+host_ip,dates))
+        connects.commit()
+        connects.close()
+
 def update_scan_err_time(dates,host_ip,app_name): #更新last_scan_err_time
     connects = mysql_conn(dbip, username, pws, dbname)
     with connects.cursor() as cursor:
@@ -130,22 +139,24 @@ def update_last_startup_time(start_time,times,http_code,host_ip,app_name): #更�
 def send_msg(msg_text,msg_ip_port):#发送短信
     sk = socket.socket()
     sk.connect(msg_ip_port)
-    sk.sendall(bytes(msg_text, 'utf8'))
+    sk.sendall(str(msg_text).encode('utf8'))
     sk.close()
 
+def OutOfMem(home_path):
+    find_log_cmd = 'tail -1000 %s/tomcat/logs/catalina.out | grep "OutOfMemoryError"'%home_path
+    ex_find_log = subprocess.Popen(find_log_cmd, shell=True, stdout=subprocess.PIPE)  # 系统中重启应用的命令
+    find_repl = str(ex_find_log.stdout.read(), encoding='utf8')
+    return len(find_repl)
+
+
 def restart(restart_cmd,app_name,home_path,appurl,host_ip,msg_ip_port): #重启函数
-    jstack = subprocess.Popen(
-        'jstack -F -l $(ps -ef| grep %s/tomcat | grep -v grep  | awk "{print $2}") > %s/jstack_$(date +"%s").log;' % (
-        app_name, home_path, '%Y%m%d%H%M%S'),
-        shell=True, stderr=subprocess.PIPE) #生产jstack到应用程序目录
-    jstack_repl = str(jstack.stderr.read(), encoding='utf8')
+    #jstack = subprocess.Popen(u'jstack -F -l $(ps -ef| grep %s/tomcat | grep -v grep  | awk "{print $2}") > %s/jstack_$(date +"%s").log;' % (app_name, home_path, u'%Y%m%d%H%M%S'),shell=True, stderr=subprocess.PIPE) #生产jstack到应用程序目录
+    #jstack_repl = unicode(jstack.stderr.read(), encoding=u'utf8')
 
-    jmap = subprocess.Popen(
-        "cd %s && sh py_jmap.sh $(ps -ef| grep %s/tomcat | grep -v grep  | awk '{print $2}');" % (home_path, app_name),
-        shell=True, stdout=subprocess.PIPE)#调用jmap.sh生成jmap信息
-    jmap_repl = str(jmap.stdout.read(), encoding='utf8')
+    #jmap = subprocess.Popen(u"cd %s && sh py_jmap.sh $(ps -ef| grep %s/tomcat | grep -v grep  | awk '{print $2}');" % (home_path, app_name),shell=True, stdout=subprocess.PIPE)#调用jmap.sh生成jmap信息
+    #jmap_repl = unicode(jmap.stdout.read(), encoding=u'utf8')
 
-    start_date = time.strftime(u'%d-%b-%Y %H:%M', time.localtime(time.time()))  # 定义开始时间 日-月(英文简写)-年 时：分：秒
+    start_date = time.strftime('%d-%b-%Y %H:%M', time.localtime(time.time()))  # 定义开始时间 日-月(英文简写)-年 时：分：秒
     date_tmp = start_date.split(':')
     start_date_5 = date_tmp[0] + ':' + str(int(date_tmp[1])+5)#启动时间加5分钟，方便sed根据时间过滤出startup in日志
     counts = 0 #计数计时器（1个为2秒）
@@ -155,11 +166,11 @@ def restart(restart_cmd,app_name,home_path,appurl,host_ip,msg_ip_port): #重启�
     logs(restart_repl)
     while True:  # 获取到startup后退出循环
         logs('auto_restart-循环检验[%s]重启结果:%s次' % (app_name, counts))
-        startup_logs = subprocess.Popen(u"sed -n '/%s/,/%s/p' %s/tomcat/logs/catalina.out | grep 'startup in' | tail -1" % (
+        startup_logs = subprocess.Popen("sed -n '/%s/,/%s/p' %s/tomcat/logs/catalina.out | grep 'startup in' | tail -1" % (
         start_date, start_date_5, home_path), shell=True, stdout=subprocess.PIPE)#获取startup in日志
         startup_repl = str(startup_logs.stdout.read(),encoding='utf-8')  # 转str
-        str_format_code = u'%{http_code}'  # Popen中不支持%{，这个直接转换为全字符传，以便调用不出错
-        http_code = subprocess.Popen(u"curl -I -m 1 -o /dev/null -s -w %s %s" % (str_format_code, appurl), shell=True,stdout=subprocess.PIPE)  # 执行命令获取状态码
+        str_format_code = '%{http_code}'  # Popen中不支持%{，这个直接转换为全字符传，以便调用不出错
+        http_code = subprocess.Popen("curl -I -m 1 -o /dev/null -s -w %s %s" % (str_format_code, appurl), shell=True,stdout=subprocess.PIPE)  # 执行命令获取状态码
         http_code_rpel = str(http_code.stdout.read(),encoding='utf8')  # 状态码
         if len(startup_repl) > 10 and http_code_rpel == '200':  # 获取到startup日志（正常startup in 日志超过10个字符），并且状态码正常执行更新sql
             repl_list = startup_repl.split(' ')  # 分割日志
@@ -173,15 +184,14 @@ def restart(restart_cmd,app_name,home_path,appurl,host_ip,msg_ip_port): #重启�
             # #短信告警接口
             logs('auto_restart-[%s]重启超时检测次数:%s' % (app_name, counts))
             error_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))  # 年-月-日 时：分：秒
-            msg_text = ('[告警]问题开始时间：%s\n触发器名称：%s重启失败(超频5次)\n主机：【%s-%s】 \n严重性：High'
-                        % (error_date, app_name,app_name, host_ip))  # 格式化短信内容
+            msg_text = ('[Devops告警]问题开始时间：%s\n触发器名称：%s重启失败(初始化超时2分钟)\n主机：【%s-%s】 \n严重性：High'% (error_date, app_name,app_name, host_ip))  # 格式化短信内容
             send_msg(msg_text,msg_ip_port) #socket发送内容到短信触发端
             update_last_startup_time('Start_Error_'+dates, '0000', '0000', host_ip, app_name)#更新重启时间，耗时，状态码
             update_status('0', host_ip, app_name)  # 更新状态，离线
             logs('%s Restart %s Unsuccessfully' % (error_date, app_name))
             break
         else:
-            time.sleep(10)
+            time.sleep(20)
             counts += 1 #等待5秒计数加1
 
 
@@ -189,6 +199,8 @@ def restart(restart_cmd,app_name,home_path,appurl,host_ip,msg_ip_port): #重启�
 def main():
     threadind_list = []  # 作为线程名列表，存储线程名
     for i in app_info():#循环列出每个应用对应的url,应用名，重启命令
+        cpu_p = psutil.cpu_percent(1)  # cpu使用率
+
         appurl = 'http://' + i[1] + ':' + str(i[2])#url
         # print(appurl)
         app_name = i[3]#应用名
@@ -196,47 +208,61 @@ def main():
         restart_cmd = i[4]#重启命令
         # print(restart_cmd)
         home_path = i[4].split(' ')[1] + i[3]#应用程序主目录
-
-
+        is_restart_now = i[5]
         code = http_status(appurl,app_name) #获取状态值
-        if code == 200: #200为正常，不做操作
-            # print(app_name+' 正常 状态码:'+str(code))
-            pass
-        else:#状态码异常
-            update_scan_err_time(dates, host_ip, app_name) #更新扫描出错时间
-            update_status('0', host_ip, app_name)#更新状态码未0，离线
-            cluster_num = cluster_status(app_name)#获取当前项目总个数
-            online_status_percent = online_status(app_name)#获取当前项目在线率
+        is_out_of_mem = OutOfMem(home_path)
+        out_of_mem = '否'
+        if is_out_of_mem > 1:
+            out_of_mem = '是'
+        #logs(u'cpu使用率：%s  状态码：%s' % (cpu_p,code))
+        if is_restart_now == 0 :
+            if code == 200 and cpu_p < 95 and is_out_of_mem == 0: #状态码200，cpu小于95，日志扫描最后1000行没有内存溢出的关键字 为正常，不做操作
+                # print(app_name+' 正常 状态码:'+str(code))
+                pass
+            else:#状态码异常
+                logs('cpu使用率：%s  状态码：%s' % (cpu_p,code))
+                logs_to_db(host_ip, app_name)
+                error_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))  # 年-月-日 时：分：秒
+                msg_text = ('[DevOps-Scan]扫描时间：%s\n触发器名称：%s_Auto_Restart\n主机：【%s-%s】 \nCPU使用率：【%s】 \n状态码：【%s】\n是否内存溢出：【%s】\n严重性：High' % (error_date, app_name, app_name, host_ip, str(cpu_p) + '%',code,out_of_mem))  # 格式化短信内容
+                #send_msg(msg_text, msg_ip_port)  # socket发送内容到短信触发端
+                update_scan_err_time(dates, host_ip, app_name) #更新扫描出错时间
+                update_status('0', host_ip, app_name)#更新状态码未0，离线
+                cluster_num = cluster_status(app_name)#获取当前项目总个数
+                online_status_percent = online_status(app_name)#获取当前项目在线率
 
-            if cluster_num > 1:#应用属于集群
-                if online_status_percent >= 50:#在线率大于50%重启
-                    cmd_threading = threading.Thread(target=restart, args=(restart_cmd,app_name,home_path,appurl,host_ip,msg_ip_port,))  # 多线程运行socket_client
+                if cluster_num > 1:#应用属于集群
+                    if online_status_percent >= 50:#在线率大于50%重启
+                        cmd_threading = threading.Thread(target=restart, args=(restart_cmd,app_name,home_path,appurl,host_ip,msg_ip_port,))  # 多线程运行socket_client
+                        threadind_list.append(cmd_threading)  # 线程名追加到threadind_list
+                        cmd_threading.start()
+                    else:#在线率小于于50%触发告警短信
+                        error_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))  # 年-月-日 时：分：秒
+                        msg_text = ('[DevOps-告警]问题开始时间：%s\n触发器名称：%s应用在线不足50%s\n主机：【%s-%s】 \n当前值：【%s】\n严重性：High'% (error_date, app_name,'%',app_name, host_ip,str(online_status_percent)+'%'))  # 格式化短信内容
+                        send_msg(msg_text,msg_ip_port) #socket发送内容到短信触发端
+                        logs('[%s] 项目在线率不足50%s,当前值：%s'%(app_name,'%',str(online_status_percent)+'%'))
+                        # time.sleep(60)
+                else:#应用不属于集群直接重启
+                    cmd_threading = threading.Thread(target=restart, args=(
+                    restart_cmd,app_name,home_path,appurl,host_ip,msg_ip_port,))  # 多线程运行socket_client
                     threadind_list.append(cmd_threading)  # 线程名追加到threadind_list
                     cmd_threading.start()
-                else:#在线率小于于50%触发告警短信
-                    error_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))  # 年-月-日 时：分：秒
-                    msg_text = ('[告警]问题开始时间：%s\n触发器名称：%s应用在线不足50%s\n主机：【%s-%s】 \n当前值：【%s】\n严重性：High'
-                                % (error_date, app_name,'%',app_name, host_ip,str(online_status_percent)+'%'))  # 格式化短信内容
-                    send_msg(msg_text,msg_ip_port) #socket发送内容到短信触发端
-                    logs('[%s] 项目在线率不足50%s,当前值：%s'%(app_name,'%',str(online_status_percent)+'%'))
-                    # time.sleep(60)
-            else:#应用不属于集群直接重启
-                cmd_threading = threading.Thread(target=restart, args=(
-                restart_cmd,app_name,home_path,appurl,host_ip,msg_ip_port,))  # 多线程运行socket_client
-                threadind_list.append(cmd_threading)  # 线程名追加到threadind_list
-                cmd_threading.start()
+        else:
+            logs('[%s-%s]:DevOps正在重启应用，本次扫描跳过！'%(app_name,host_ip))
 
     for i in threadind_list:  # 等待线程结束
         i.join()
 if __name__ == "__main__":
     host_ip = hostip()
     # host_ip = '172.16.100.157'
-    dbip = u'172.16.100.157'
-    username =u'dbinfo'
-    pws = u'dbinfo@123456'
-    dbname = u'dbinfo'
-    msg_ip_port = (u'172.16.100.157',8888)
+    dbip = '10.0.214.222'
+    username ='zabbix'
+    pws = 'zabbix@2017'
+    dbname = 'zabbix'
+    msg_ip_port = ('10.0.214.222',10057)
     while True:
-        dates = time.strftime(u'%Y-%m-%d %H:%M:%S', time.localtime(time.time()))  # 年-月-日 时：分：秒
-        main()
-        time.sleep(60)#等待一分钟开始下一次循环
+        try:
+            dates = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))  # 年-月-日 时：分：秒
+            main()
+            time.sleep(60)#等待一分钟开始下一次循环
+        except Exception as e:
+            logs(e)
